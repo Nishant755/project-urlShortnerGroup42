@@ -1,4 +1,6 @@
 const mongoose = require("mongoose")
+// ================================================[Model]===================================================
+
 
 const urlSchema = new mongoose.Schema({
     urlCode: { type: String, required: true, unique: true, lowercase: true, trim: true },
@@ -6,4 +8,6 @@ const urlSchema = new mongoose.Schema({
     shortUrl: { type: String, required: true }
 },{ versionKey: false,timestamps: false })
 
+
+// ===================================================================================================
 module.exports = mongoose.model("urlModel", urlSchema)
