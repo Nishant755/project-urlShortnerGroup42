@@ -10,9 +10,11 @@ const isValid = function (value) {
 }
 regex = /[(http(s)?):\/\/(www\.)?a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)/
 
-    let baseUrl = "http://localhost:3000"
+   
 const urlShortner = async (req, res) => {
     try {
+        baseUrl = req.protocol + '://' + req.get('host')
+
         let { longUrl, ...rest } = req.body
 
         if (Object.keys(req.body).length == 0) return res.status(400).send({ status: false, message: "Req body is empty" })
@@ -35,8 +37,8 @@ const urlShortner = async (req, res) => {
                 shortUrl: shortUrl
             }
 
-            let savedDate = await urlModel.create(url)
-            return res.status(201).send({ status: true, data: savedDate })
+            let savedDate =  await urlModel.create(url)
+            return res.status(201).send({ status: true, data: url })
 
 
         }
@@ -48,4 +50,23 @@ const urlShortner = async (req, res) => {
         return res.status(500).send({ status: false, Error: err.message })
     }
 }
-module.exports.urlShortner = urlShortner
+const geturl = async function (req, res) {
+    try {
+        const urlCode = req.params.urlCode.trim().toLowerCase()
+        if (!isValid(urlCode)) {
+            res.status(400).send({ status: false, message: 'Please provide valid urlCode' })
+        }
+        const url = await urlModel.findOne({ urlCode: urlCode })     
+        if (!url) {
+            return res.status(404).send({ status: false, message: 'No URL Found' })
+        }
+    return res.redirect(302,url.longUrl)
+    }
+
+    catch (err) {
+        console.error(err)
+        res.status(500).send('Server Error')
+    }
+}
+
+module.exports= {urlShortner,geturl}
