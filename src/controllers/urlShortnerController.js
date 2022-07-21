@@ -1,7 +1,9 @@
 const urlModel = require("../models/urlModel");
 const shortid = require('shortid');
 const redis = require("redis")
+const url = require('url');
 const { promisify } = require("util");
+var dns = require('dns');
 
 // ============================================================================================================
 // remote dict server
@@ -36,10 +38,6 @@ const isValid = function (value) {
     return true;
 }
 
-// ===================================================[Regex]==================================================
-
-
-regex = /[(http(s)?):\/\/(www\.)?a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)/
 
 
 // ===================================================[Create Short Url]=======================================
@@ -51,41 +49,65 @@ const urlShortner = async (req, res) => {
 
         if (Object.keys(req.body).length == 0) return res.status(400).send({ status: false, message: "Req body is empty" })
         if (Object.keys(rest).length > 0) return res.status(400).send({ status: false, message: "Invalid attribut in request body" })
-
-        // https:        //                   babeljs.io
-        const urlparts = longUrl.split('//')
-        const part1 = urlparts[0]
-        const part2 = urlparts[1]
-
         if (!isValid(longUrl)) return res.status(400).send({ status: false, msg: "URL is Invalid" });
-        if (!(((part1 == "http:") || (part1 == "https:")) && (part1.trim().length) )) {
-            return res.status(400).send({ status: false, msg: "URL is Invalid ,Http is missing in URL" });
+
+        const urlInfo = url.parse(longUrl);
+        console.log(longUrl)
+        console.log(urlInfo)
+        console.log(urlInfo.hostname)
+
+        if (urlInfo.hostname==null) {
+            return res.status(400).send({ status: false, msg: "URL is Invalid " });
         }
-        if (!regex.test(longUrl)) return res.status(400).send({ status: false, msg: "URL is Invalid" });
 
-        let url = await urlModel.findOne({ longUrl: longUrl }).select({ "_id": 0, "createdAt": 0, "updatedAt": 0 })
-        if (url) {
-            return res.status(200).send({ status: true, data: url })
+        if (urlInfo.protocol == null && urlInfo.hostname!==null) {
+            longUrl = req.protocol + '://' + longUrl
         }
-        else {
-            let urlCode = shortid.generate();
 
-            let findUrlCode = await urlModel.findOne({ urlCode: urlCode })
-            if (findUrlCode) return res.status(400).send({ status: false, message: "URL code must me unique for every url." })
+        if (!(urlInfo.protocol == null) && !['https:', 'http:'].includes(urlInfo.protocol)) {
+            return res.status(400).send({ status: false, msg: "URL is Invalid ,Http protocol is missing in URL" });
+        }
 
-            let shortUrl = baseUrl + '/' + urlCode
-            url = {
-                urlCode: urlCode,
-                longUrl: longUrl,
-                shortUrl: shortUrl
+        // //Url Validation
+        // const urlparts = longUrl.split('//')
+        // const part1 = urlparts[0]
+
+        // if (!(((part1 == "http:") || (part1 == "https:")) && (part1.trim().length))) {
+        //     return res.status(400).send({ status: false, msg: "URL is Invalid ,Http is missing in URL" });
+        // }
+
+
+
+
+        dns.lookup(urlInfo.hostname, async function onLookup(err, addresses, family) {
+            if (err) {
+                return res.status(400).send({ status: false, message: "Domain name is Not Valid.." })
             }
-            let savedData = await urlModel.create(url)
 
-            //await SET_ASYNC(`${urlCode}`, JSON.stringify(longUrl))
-            await SET_ASYNC(urlCode.toLowerCase(), longUrl)
+            let url = await urlModel.findOne({ longUrl: longUrl }).select({ "_id": 0, "createdAt": 0, "updatedAt": 0 })
+            if (url) {
+                return res.status(200).send({ status: true, data: url })
+            }
+            else {
+                let urlCode = shortid.generate();
 
-            return res.status(201).send({ status: true, data: savedData })
-        }
+                let findUrlCode = await urlModel.findOne({ urlCode: urlCode })
+                if (findUrlCode) return res.status(400).send({ status: false, message: "URL code must me unique for every url." })
+
+
+                let shortUrl = baseUrl + '/' + urlCode
+                url = {
+                    urlCode: urlCode,
+                    longUrl: longUrl,
+                    shortUrl: shortUrl
+                }
+                let savedData = await urlModel.create(url)
+
+                await SET_ASYNC(urlCode.toLowerCase(), longUrl)  //---set urlcode to cache
+
+                return res.status(201).send({ status: true, data: savedData })
+            }
+        });
     } catch (err) {
         return res.status(500).send({ status: false, Error: err.message })
     }
@@ -99,10 +121,8 @@ const getUrl = async (req, res) => {
         if (!isValid(urlCode)) return res.status(400).send({ status: false, message: "Invalid Code" })
         if (!shortid.isValid(urlCode)) return res.status(400).send({ status: false, message: "Invalid Code" })
 
-        let cahcedUrlData = await GET_ASYNC(urlCode.toLowerCase())
+        let cahcedUrlData = await GET_ASYNC(urlCode.toLowerCase())  //---get the urlCode from cache
         if (cahcedUrlData) {
-            //return res.redirect(302, cahcedUrlData)
-            //console.log(cahcedUrlData)
             return res.status(302).redirect(cahcedUrlData)
         }
         else {
@@ -120,4 +140,4 @@ const getUrl = async (req, res) => {
 }
 // ===============================================================================================================
 
-module.exports = {urlShortner, getUrl}
+module.exports = { urlShortner, getUrl }
