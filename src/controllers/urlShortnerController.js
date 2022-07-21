@@ -4,6 +4,7 @@ const redis = require("redis")
 const url = require('url');
 const { promisify } = require("util");
 var dns = require('dns');
+const { json } = require("express");
 
 // ============================================================================================================
 // remote dict server
@@ -43,41 +44,33 @@ const isValid = function (value) {
 // ===================================================[Create Short Url]=======================================
 const urlShortner = async (req, res) => {
     try {
-        let { longUrl, ...rest } = req.body
+        let { longUrl, ...rest } = req.body;
 
-        baseUrl = req.protocol + '://' + req.get('host')
+        baseUrl = req.protocol + '://' + req.get('host');
 
         if (Object.keys(req.body).length == 0) return res.status(400).send({ status: false, message: "Req body is empty" })
         if (Object.keys(rest).length > 0) return res.status(400).send({ status: false, message: "Invalid attribut in request body" })
-        if (!isValid(longUrl)) return res.status(400).send({ status: false, msg: "URL is Invalid" });
+        if (!isValid(longUrl)) return res.status(400).send({ status: false, msg: "URL is Invalid..." });
+
+        let splitUrl=longUrl.split("//");
+        part1=splitUrl[0];
+       
+        if (!(((part1 == "http:") || (part1 == "https:")) && (part1.trim().length))) {
+            return res.status(400).send({ status: false, msg: "please enter the valid Url..(url must start with ,http: or https:)" });
+        }
 
         const urlInfo = url.parse(longUrl);
-        console.log(longUrl)
-        console.log(urlInfo)
-        console.log(urlInfo.hostname)
+        // console.log(longUrl)
+        // console.log(urlInfo)
+        // console.log(urlInfo.hostname)
 
-        if (urlInfo.hostname==null) {
-            return res.status(400).send({ status: false, msg: "URL is Invalid " });
+        
+
+        let cahcedUrlData = await GET_ASYNC(longUrl)  //---get the urlCode from cache
+        if (cahcedUrlData) {
+
+            return res.status(200).send({ status: true, data: JSON.parse(cahcedUrlData) })
         }
-
-        if (urlInfo.protocol == null && urlInfo.hostname!==null) {
-            longUrl = req.protocol + '://' + longUrl
-        }
-
-        if (!(urlInfo.protocol == null) && !['https:', 'http:'].includes(urlInfo.protocol)) {
-            return res.status(400).send({ status: false, msg: "URL is Invalid ,Http protocol is missing in URL" });
-        }
-
-        // //Url Validation
-        // const urlparts = longUrl.split('//')
-        // const part1 = urlparts[0]
-
-        // if (!(((part1 == "http:") || (part1 == "https:")) && (part1.trim().length))) {
-        //     return res.status(400).send({ status: false, msg: "URL is Invalid ,Http is missing in URL" });
-        // }
-
-
-
 
         dns.lookup(urlInfo.hostname, async function onLookup(err, addresses, family) {
             if (err) {
@@ -104,8 +97,9 @@ const urlShortner = async (req, res) => {
                 let savedData = await urlModel.create(url)
 
                 await SET_ASYNC(urlCode.toLowerCase(), longUrl)  //---set urlcode to cache
+                await SET_ASYNC(longUrl, JSON.stringify(url))    //-----set the longUrl in cache
 
-                return res.status(201).send({ status: true, data: savedData })
+                return res.status(201).send({ status: true, data: url })
             }
         });
     } catch (err) {
@@ -129,7 +123,8 @@ const getUrl = async (req, res) => {
             let findUrl = await urlModel.findOne({ urlCode: urlCode })
             if (!findUrl) return res.status(404).send({ status: false, message: "No URL found" })
             longUrl = findUrl.longUrl
-            await SET_ASYNC(urlCode.toLowerCase(), longUrl)
+
+            await SET_ASYNC(urlCode.toLowerCase(), longUrl)  //---set the data in cache
             return res.status(302).redirect(findUrl.longUrl)
         }
 
